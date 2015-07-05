@@ -611,6 +611,10 @@ class ImportedModelBackend(ModelBackend):
     pass
 
 
+class OtherImportedModelBackend(ModelBackend):
+    pass
+
+
 class ImportedBackendTests(TestCase):
     """
     #23925 - The backend path added to the session should be the same
@@ -618,13 +622,41 @@ class ImportedBackendTests(TestCase):
     """
 
     backend = 'auth_tests.backend_alias.ImportedModelBackend'
+    other_backend = 'auth_tests.backend_alias.OtherImportedModelBackend'
+    username = 'username'
+    password = 'password'
 
     @override_settings(AUTHENTICATION_BACKENDS=[backend])
     def test_backend_path(self):
-        username = 'username'
-        password = 'password'
-        User.objects.create_user(username, 'email', password)
-        self.assertTrue(self.client.login(username=username, password=password))
+        User.objects.create_user(self.username, 'email', self.password)
+        self.assertTrue(self.client.login(username=self.username, password=self.password))
+
+        self._expect_backend_in_session(self.backend)
+
+    @override_settings(AUTHENTICATION_BACKENDS=[backend])
+    def test_backend_path_login_without_authenticate_single_backend(self):
+        user = User.objects.create_user(self.username, 'email', self.password)
+
+        self.client._login(user)
+
+        self._expect_backend_in_session(self.backend)
+
+    @override_settings(AUTHENTICATION_BACKENDS=[backend, other_backend])
+    def test_backend_path_login_without_authenticate_multiple_backends(self):
+        user = User.objects.create_user(self.username, 'email', self.password)
+
+        with self.assertRaises(ValueError):
+            self.client._login(user)
+
+    @override_settings(AUTHENTICATION_BACKENDS=[backend, other_backend])
+    def test_backend_path_login_with_explicit_backends(self):
+        user = User.objects.create_user(self.username, 'email', self.password)
+
+        self.client._login(user, self.other_backend)
+
+        self._expect_backend_in_session(self.other_backend)
+
+    def _expect_backend_in_session(self, backend):
         request = HttpRequest()
         request.session = self.client.session
-        self.assertEqual(request.session[BACKEND_SESSION_KEY], self.backend)
+        self.assertEqual(request.session[BACKEND_SESSION_KEY], backend)
